@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: write
-  packages: read
+  packages: write # Needed to push to GHCR
 
 jobs:
   deploy:
@@ -17,25 +17,23 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Required for tags
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install jq (JSON parser)
+      - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Determine next version tag
         id: version
         run: |
-          # Read version from package.json
           PACKAGE_VERSION=$(jq -r '.version' package.json)
           PACKAGE_MAJOR=$(echo "$PACKAGE_VERSION" | cut -d. -f1)
           PACKAGE_MINOR=$(echo "$PACKAGE_VERSION" | cut -d. -f2)
 
-          # Get latest Git tag (fallback to v0.0.0)
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "Latest tag: $LATEST_TAG"
 
@@ -45,15 +43,13 @@ jobs:
           LATEST_PATCH=$(echo "$LATEST_VERSION" | cut -d. -f3)
 
           if [ "$PACKAGE_MAJOR" -ne "$LATEST_MAJOR" ] || [ "$PACKAGE_MINOR" -ne "$LATEST_MINOR" ]; then
-            # Major or minor version changed → reset patch
             NEW_TAG="v${PACKAGE_MAJOR}.${PACKAGE_MINOR}.0"
           else
-            # Same major/minor → bump patch
             NEW_PATCH=$((LATEST_PATCH + 1))
             NEW_TAG="v${PACKAGE_MAJOR}.${PACKAGE_MINOR}.${NEW_PATCH}"
           fi
 
-          echo "Bumping to $NEW_TAG"
+          echo "New tag: $NEW_TAG"
 
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
@@ -67,6 +63,19 @@ jobs:
           OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_NAME=ghcr.io/$OWNER_LOWER/trading-storm-backend" >> $GITHUB_ENV
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and Push Versioned Image to GHCR
+        run: |
+          docker pull $IMAGE_NAME:latest
+          docker tag $IMAGE_NAME:latest $IMAGE_NAME:$NEW_TAG
+          docker push $IMAGE_NAME:$NEW_TAG
+
       - name: Deploy to Lightsail
         env:
           HOST: ${{ secrets.LIGHTSAIL_HOST }}
@@ -79,9 +88,7 @@ jobs:
           chmod 600 key.pem
 
           ssh -i key.pem -o StrictHostKeyChecking=no $USER@$HOST << EOF
-            docker pull $IMAGE_NAME:latest
-            docker tag $IMAGE_NAME:latest $IMAGE_NAME:$VERSION_TAG
-
+            docker pull $IMAGE_NAME:$VERSION_TAG
             docker stop backend || true
             docker rm backend || true
             docker run -d --name backend -p 3000:3000 $IMAGE_NAME:$VERSION_TAG
