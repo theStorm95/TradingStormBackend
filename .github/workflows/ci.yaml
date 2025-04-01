@@ -51,7 +51,8 @@ jobs:
           PACKAGE_MAJOR=$(echo "$PACKAGE_VERSION" | cut -d. -f1)
           PACKAGE_MINOR=$(echo "$PACKAGE_VERSION" | cut -d. -f2)
 
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_TAG=$(git for-each-ref --sort=-creatordate --format '%(refname:short)' refs/tags | head -n 1 || echo "v0.0.0")
+
           echo "Latest tag: $LATEST_TAG"
 
           LATEST_VERSION=${LATEST_TAG#v}
