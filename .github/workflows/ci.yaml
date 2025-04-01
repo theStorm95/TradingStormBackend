@@ -45,6 +45,8 @@ jobs:
       - name: Determine next version
         id: version
         run: |
+          git fetch --tags
+
           PACKAGE_VERSION=$(jq -r '.version' package.json)
           PACKAGE_MAJOR=$(echo "$PACKAGE_VERSION" | cut -d. -f1)
           PACKAGE_MINOR=$(echo "$PACKAGE_VERSION" | cut -d. -f2)
