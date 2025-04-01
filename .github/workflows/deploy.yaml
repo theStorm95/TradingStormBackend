@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
   packages: read
 
 jobs:
@@ -14,7 +14,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Extract lowercase image name
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install jq (JSON parser)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Determine next version tag
+        id: version
+        run: |
+          # Read version from package.json
+          PACKAGE_VERSION=$(jq -r '.version' package.json)
+          PACKAGE_MAJOR=$(echo "$PACKAGE_VERSION" | cut -d. -f1)
+          PACKAGE_MINOR=$(echo "$PACKAGE_VERSION" | cut -d. -f2)
+
+          # Get latest Git tag (fallback to v0.0.0)
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          LATEST_VERSION=${LATEST_TAG#v}
+          LATEST_MAJOR=$(echo "$LATEST_VERSION" | cut -d. -f1)
+          LATEST_MINOR=$(echo "$LATEST_VERSION" | cut -d. -f2)
+          LATEST_PATCH=$(echo "$LATEST_VERSION" | cut -d. -f3)
+
+          if [ "$PACKAGE_MAJOR" -ne "$LATEST_MAJOR" ] || [ "$PACKAGE_MINOR" -ne "$LATEST_MINOR" ]; then
+            # Major or minor version changed → reset patch
+            NEW_TAG="v${PACKAGE_MAJOR}.${PACKAGE_MINOR}.0"
+          else
+            # Same major/minor → bump patch
+            NEW_PATCH=$((LATEST_PATCH + 1))
+            NEW_TAG="v${PACKAGE_MAJOR}.${PACKAGE_MINOR}.${NEW_PATCH}"
+          fi
+
+          echo "Bumping to $NEW_TAG"
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag $NEW_TAG
+          git push origin $NEW_TAG
+
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+
+      - name: Lowercase image name
         run: |
           OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_NAME=ghcr.io/$OWNER_LOWER/trading-storm-backend" >> $GITHUB_ENV
@@ -25,18 +73,16 @@ jobs:
           USER: ${{ secrets.LIGHTSAIL_USER }}
           SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          VERSION_TAG: ${{ env.NEW_TAG }}
         run: |
           echo "$SSH_KEY" > key.pem
           chmod 600 key.pem
 
           ssh -i key.pem -o StrictHostKeyChecking=no $USER@$HOST << EOF
-            set -e
-
-            echo "Pulling latest image"
             docker pull $IMAGE_NAME:latest
+            docker tag $IMAGE_NAME:latest $IMAGE_NAME:$VERSION_TAG
 
-            echo "Restarting backend container"
             docker stop backend || true
             docker rm backend || true
-            docker run -d --name backend -p 3000:3000 $IMAGE_NAME:latest
+            docker run -d --name backend -p 3000:3000 $IMAGE_NAME:$VERSION_TAG
           EOF
