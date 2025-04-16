@@ -1,14 +1,19 @@
-import express from "express";
+import app from "./app";
 
-const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-
-app.get("/", (_req, res) => {
-  res.send("Value Investing API");
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Graceful shutdown
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
+function shutdown() {
+  console.log("🛑 Shutting down gracefully...");
+  server.close(() => {
+    console.log("✅ Server closed");
+    process.exit(0);
+  });
+}
