@@ -5,8 +5,11 @@
     "strict": true,
     "esModuleInterop": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "resolveJsonModule": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    "moduleResolution": "node"
+  },
+  "include": ["src", "tests"],
+  "exclude": ["node_modules"]
 }
