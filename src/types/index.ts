@@ -1,1 +1,1 @@
-export { Stock } from "./types";
+export { BuffetStock } from "./stock";

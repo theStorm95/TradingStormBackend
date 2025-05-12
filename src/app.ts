@@ -14,6 +14,9 @@ app.use(helmet());
 app.use(express.json());
 
 app.use("/", createHealthRouter());
-app.use("/stocks", createStocksRouter(coreServices.dataProvider));
+app.use(
+  "/stocks",
+  createStocksRouter(coreServices.dataProvider(), coreServices.logger("stocks"))
+);
 
 export default app;
